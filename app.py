@@ -74,7 +74,7 @@ def fit_sheet_to_a4(ws):
     for col_num, w in enumerate(boosted_widths, 1):
         ws.column_dimensions[get_column_letter(col_num)].width = w * scale_w
 
-    # ヘッダー/フッターを均一スケール、日付データ行（12〜42）で残り高さをすべて使う
+    # ヘッダー/フッターは元の高さのまま、残り高さをすべてデータ行（12〜42）へ
     target_h_pt = target_h_px / PX_PER_ROW_PT
 
     HEADER_END = 11
@@ -85,22 +85,19 @@ def fit_sheet_to_a4(ws):
     data_h   = [row_heights[r - 1] for r in range(DATA_START, DATA_END + 1) if r <= n_rows]
     footer_h = [row_heights[r - 1] for r in range(DATA_END + 1, n_rows + 1)]
 
-    total_raw_h = sum(header_h) + sum(data_h) + sum(footer_h)
-    base_scale = target_h_pt / total_raw_h if total_raw_h > 0 else 1.0
-
-    remaining = target_h_pt - sum(header_h) * base_scale - sum(footer_h) * base_scale
-    data_scale = remaining / sum(data_h) if sum(data_h) > 0 else base_scale
+    # ヘッダー/フッターは生の高さで固定し、残りをすべてデータ行に割り当てる
+    data_scale = (target_h_pt - sum(header_h) - sum(footer_h)) / sum(data_h) if sum(data_h) > 0 else 1.0
 
     for row_num in range(1, HEADER_END + 1):
         if row_num <= n_rows:
-            ws.row_dimensions[row_num].height = row_heights[row_num - 1] * base_scale
+            ws.row_dimensions[row_num].height = row_heights[row_num - 1]
 
     for row_num in range(DATA_START, DATA_END + 1):
         if row_num <= n_rows:
             ws.row_dimensions[row_num].height = row_heights[row_num - 1] * data_scale
 
     for row_num in range(DATA_END + 1, n_rows + 1):
-        ws.row_dimensions[row_num].height = row_heights[row_num - 1] * base_scale
+        ws.row_dimensions[row_num].height = row_heights[row_num - 1]
 
     # データ行（12〜42）の入力済みフィールドを消去
     for row in range(12, 43):
