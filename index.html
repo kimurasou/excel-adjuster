@@ -221,10 +221,9 @@ def fit_sheet_to_a4(ws):
     col_widths  = [col_map.get(c, DEFAULT_COL_WIDTH)  for c in range(1, n_cols + 1)]
     row_heights = [row_map.get(r, DEFAULT_ROW_HEIGHT) for r in range(1, n_rows + 1)]
 
-    OVERSHOOT_W = 1.10
-    OVERSHOOT_H = 4.00
-    target_w_px = A4_PORTRAIT_W / 2.54 * DPI * OVERSHOOT_W
-    target_h_px = A4_PORTRAIT_H / 2.54 * DPI * OVERSHOOT_H
+    OVERSHOOT = 1.10
+    target_w_px = A4_PORTRAIT_W / 2.54 * DPI * OVERSHOOT
+    target_h_px = A4_PORTRAIT_H / 2.54 * DPI * OVERSHOOT
 
     TIME_COL_BOOST = 1.5
     TIME_COLS = set(range(14, 22))
@@ -235,8 +234,10 @@ def fit_sheet_to_a4(ws):
     for col_num, w in enumerate(boosted, 1):
         ws.column_dimensions[get_column_letter(col_num)].width = w * scale_w
 
-    # ヘッダー/フッターは元の高さのまま、残り高さをすべてデータ行（12〜42）へ
+    # データ行（12〜42）にブーストを掛け、全体を正規化して target_h_pt に収める
+    # → ヘッダー/フッターの比率を維持しつつデータ行だけ背を高くする
     target_h_pt = target_h_px / PX_PER_ROW_PT
+    DATA_BOOST = 2.0
 
     HEADER_END = 11
     DATA_START = 12
@@ -246,19 +247,19 @@ def fit_sheet_to_a4(ws):
     data_h   = [row_heights[r - 1] for r in range(DATA_START, DATA_END + 1) if r <= n_rows]
     footer_h = [row_heights[r - 1] for r in range(DATA_END + 1, n_rows + 1)]
 
-    # ヘッダー/フッターは生の高さで固定し、残りをすべてデータ行に割り当てる
-    data_scale = (target_h_pt - sum(header_h) - sum(footer_h)) / sum(data_h) if sum(data_h) > 0 else 1.0
+    weighted_total = sum(header_h) + sum(data_h) * DATA_BOOST + sum(footer_h)
+    scale = target_h_pt / weighted_total if weighted_total > 0 else 1.0
 
     for row_num in range(1, HEADER_END + 1):
         if row_num <= n_rows:
-            ws.row_dimensions[row_num].height = row_heights[row_num - 1]
+            ws.row_dimensions[row_num].height = row_heights[row_num - 1] * scale
 
     for row_num in range(DATA_START, DATA_END + 1):
         if row_num <= n_rows:
-            ws.row_dimensions[row_num].height = row_heights[row_num - 1] * data_scale
+            ws.row_dimensions[row_num].height = row_heights[row_num - 1] * scale * DATA_BOOST
 
     for row_num in range(DATA_END + 1, n_rows + 1):
-        ws.row_dimensions[row_num].height = row_heights[row_num - 1]
+        ws.row_dimensions[row_num].height = row_heights[row_num - 1] * scale
 
     # データ行（12〜42）の入力済みフィールドを消去
     for row in range(12, 43):
