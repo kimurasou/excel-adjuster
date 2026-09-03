@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Excel 手書き用変換</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -48,6 +47,29 @@
       margin-bottom: 16px;
     }
 
+    /* ローディングバー */
+    .loading-bar {
+      width: 100%;
+      height: 4px;
+      background: #e2e8f0;
+      border-radius: 2px;
+      margin-bottom: 10px;
+      overflow: hidden;
+    }
+    .loading-bar-inner {
+      height: 100%;
+      background: #4299e1;
+      border-radius: 2px;
+      width: 0%;
+      transition: width 0.4s ease;
+    }
+    .loading-msg {
+      font-size: 13px;
+      color: #718096;
+      margin-bottom: 20px;
+      min-height: 20px;
+    }
+
     .drop-zone {
       border: 2px dashed #cbd5e0;
       border-radius: 12px;
@@ -58,7 +80,12 @@
       position: relative;
     }
 
-    .drop-zone:hover, .drop-zone.dragover {
+    .drop-zone.disabled {
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
+    .drop-zone:hover:not(.disabled), .drop-zone.dragover {
       border-color: #4299e1;
       background: #ebf8ff;
     }
@@ -72,7 +99,7 @@
       height: 100%;
     }
 
-    .drop-zone .icon { font-size: 52px; margin-bottom: 14px; }
+    .drop-zone .icon  { font-size: 52px; margin-bottom: 14px; }
     .drop-zone .label { color: #4a5568; font-size: 15px; font-weight: 500; }
     .drop-zone .hint  { color: #a0aec0; font-size: 13px; margin-top: 6px; }
 
@@ -133,8 +160,11 @@
     レイアウトや構成はそのまま維持されます。
   </p>
 
-  <div class="drop-zone" id="dropZone">
-    <input type="file" id="fileInput" accept=".xlsx,.xlsm">
+  <div class="loading-bar"><div class="loading-bar-inner" id="loadBar"></div></div>
+  <div class="loading-msg" id="loadMsg">Python環境を準備中... (初回のみ30秒ほどかかります)</div>
+
+  <div class="drop-zone disabled" id="dropZone">
+    <input type="file" id="fileInput" accept=".xlsx,.xlsm" disabled>
     <div class="icon">📊</div>
     <div class="label">クリックまたはドラッグ＆ドロップ</div>
     <div class="hint">.xlsx ファイルに対応</div>
@@ -147,112 +177,144 @@
   <div class="info-box">
     <strong>自動で行うこと</strong><br>
     ・縦横の比率を維持したままセルを拡大<br>
-    ・縦長なら縦向き、横長なら横向きを自動選択<br>
-    ・用紙サイズを A4 に設定<br>
+    ・縦向き A4 固定・用紙いっぱいに収める<br>
+    ・開始時間・終了時間の列を広めに調整<br>
     ・ファイル名に「_手書き用」を追加して保存
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
 <script>
-// ── 定数 ────────────────────────────────────────────────────────────
-const MARGIN_CM       = 0.5;
-const A4_W_CM         = 21.0 - 2 * MARGIN_CM;   // 20.0 cm
-const A4_H_CM         = 29.7 - 2 * MARGIN_CM;   // 28.7 cm
-const DPI             = 96.0;
-const PX_PER_COL_UNIT = 64.0 / 8.43;            // ≈ 7.59
-const PX_PER_ROW_PT   = DPI / 72.0;             // ≈ 1.333
-const DEFAULT_COL_W   = 8.43;
-const DEFAULT_ROW_H   = 15.0;
-const TIME_COLS       = new Set([14,15,16,17,18,19,20,21]); // N-U
-const TIME_BOOST      = 1.5;
-const DATE_BOOST      = 1.5;
-const OVERSHOOT       = 1.10;
-const CELLS_TO_CLEAR  = [
-  'V43','Z43','AE43','AH43','AK43','AN43','AQ43','AT43','AW43',
-  'BH43','BH44','AZ46'
-];
+const PYTHON_CODE = `
+import io, openpyxl
+from openpyxl.utils import get_column_letter
+from collections import Counter
 
-// ── 変換ロジック ─────────────────────────────────────────────────────
-function fitSheetToA4(ws) {
-  const ref = ws['!ref'];
-  if (!ref) return;
+MARGIN_CM     = 0.5
+A4_PORTRAIT_W = 21.0 - 2 * MARGIN_CM
+A4_PORTRAIT_H = 29.7 - 2 * MARGIN_CM
+DPI           = 96.0
+PX_PER_COL_UNIT = 64.0 / 8.43
+PX_PER_ROW_PT   = DPI / 72.0
+DEFAULT_COL_WIDTH  = 8.43
+DEFAULT_ROW_HEIGHT = 15.0
 
-  const range  = XLSX.utils.decode_range(ref);
-  const nCols  = range.e.c + 1;
-  const nRows  = range.e.r + 1;
-  const rawCols = ws['!cols'] || [];
-  const rawRows = ws['!rows'] || [];
+def build_col_width_map(ws):
+    widths = {}
+    default = ws.sheet_format.defaultColWidth or DEFAULT_COL_WIDTH
+    for dim in ws.column_dimensions.values():
+        for col_idx in range(dim.min, dim.max + 1):
+            widths[col_idx] = dim.width if (dim.width and dim.width > 0) else default
+    return widths
 
-  // 列幅を取得（SheetJSはxml <col min-max>を展開済み）
-  const colWidths = Array.from({length: nCols}, (_, i) => {
-    const c = rawCols[i] || {};
-    const w = c.wch || c.width;
-    return (w && w > 0) ? w : DEFAULT_COL_W;
-  });
+def build_row_height_map(ws):
+    heights = {}
+    for row_num, dim in ws.row_dimensions.items():
+        heights[row_num] = dim.height if (dim.height and dim.height > 0) else DEFAULT_ROW_HEIGHT
+    return heights
 
-  // 行高さを取得
-  const rowHeights = Array.from({length: nRows}, (_, i) => {
-    const r = rawRows[i] || {};
-    const h = r.hpt;
-    return (h && h > 0) ? h : DEFAULT_ROW_H;
-  });
+def fit_sheet_to_a4(ws):
+    n_cols = ws.max_column or 1
+    n_rows = ws.max_row or 1
+    col_map = build_col_width_map(ws)
+    row_map = build_row_height_map(ws)
+    col_widths  = [col_map.get(c, DEFAULT_COL_WIDTH)  for c in range(1, n_cols + 1)]
+    row_heights = [row_map.get(r, DEFAULT_ROW_HEIGHT) for r in range(1, n_rows + 1)]
 
-  const targetWPx = A4_W_CM / 2.54 * DPI * OVERSHOOT;
-  const targetHPx = A4_H_CM / 2.54 * DPI * OVERSHOOT;
+    OVERSHOOT = 1.10
+    target_w_px = A4_PORTRAIT_W / 2.54 * DPI * OVERSHOOT
+    target_h_px = A4_PORTRAIT_H / 2.54 * DPI * OVERSHOOT
 
-  // 時間列ブーストを適用して列幅スケール計算
-  const boosted   = colWidths.map((w, i) => TIME_COLS.has(i + 1) ? w * TIME_BOOST : w);
-  const totalWPx  = boosted.reduce((s, w) => s + w, 0) * PX_PER_COL_UNIT;
-  const scaleW    = targetWPx / totalWPx;
-  ws['!cols'] = boosted.map(w => ({ wch: w * scaleW }));
+    TIME_COL_BOOST = 1.5
+    TIME_COLS = set(range(14, 22))
+    boosted = [w * TIME_COL_BOOST if (i + 1) in TIME_COLS else w for i, w in enumerate(col_widths)]
 
-  // 最頻値の行高さ = 日付行として DATE_BOOST 優先
-  const counts = {};
-  rowHeights.forEach(h => counts[h] = (counts[h] || 0) + 1);
-  const modalH  = +Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
-  const isData  = rowHeights.map(h => Math.abs(h - modalH) < 0.1);
-  const dataSum  = rowHeights.reduce((s, h, i) =>  isData[i] ? s + h : s, 0);
-  const otherSum = rowHeights.reduce((s, h, i) => !isData[i] ? s + h : s, 0);
-  const targetHPt = targetHPx / PX_PER_ROW_PT;
-  const Rd = targetHPt / (dataSum + otherSum / DATE_BOOST);
-  const Rn = Rd / DATE_BOOST;
-  ws['!rows'] = rowHeights.map((h, i) => ({ hpt: h * (isData[i] ? Rd : Rn) }));
+    total_w_px = sum(boosted) * PX_PER_COL_UNIT
+    scale_w = target_w_px / total_w_px
+    for col_num, w in enumerate(boosted, 1):
+        ws.column_dimensions[get_column_letter(col_num)].width = w * scale_w
 
-  // 指定セルを空白化
-  CELLS_TO_CLEAR.forEach(coord => {
-    const cell = ws[coord];
-    if (cell) { delete cell.f; cell.v = ''; cell.t = 's'; }
-  });
+    modal_h = Counter(row_heights).most_common(1)[0][0]
+    is_data = [abs(h - modal_h) < 0.1 for h in row_heights]
+    data_sum  = sum(h for h, d in zip(row_heights, is_data) if d)
+    other_sum = sum(h for h, d in zip(row_heights, is_data) if not d)
+    DATE_BOOST = 1.5
+    target_h_pt = target_h_px / PX_PER_ROW_PT
+    Rd = target_h_pt / (data_sum + other_sum / DATE_BOOST)
+    Rn = Rd / DATE_BOOST
+    for row_num, (h, d) in enumerate(zip(row_heights, is_data), 1):
+        ws.row_dimensions[row_num].height = h * (Rd if d else Rn)
 
-  // ページ設定
-  ws['!pageSetup'] = {
-    paperSize:   9,
-    orientation: 'portrait',
-    fitToWidth:  1,
-    fitToHeight: 1,
-  };
-  ws['!margins'] = {
-    left:   MARGIN_CM / 2.54,
-    right:  MARGIN_CM / 2.54,
-    top:    MARGIN_CM / 2.54,
-    bottom: MARGIN_CM / 2.54,
-    header: 0,
-    footer: 0,
-  };
-  // fitToPage フラグ（sheetProperties/pageSetUpPr）
-  if (!ws['!sheetPr']) ws['!sheetPr'] = {};
-  ws['!sheetPr'].pageSetUpPr = { fitToPage: true };
-}
+    for coord in ['V43','Z43','AE43','AH43','AK43','AN43','AQ43','AT43','AW43','BH43','BH44','AZ46']:
+        ws[coord].value = None
 
-// ── UI ───────────────────────────────────────────────────────────────
-const fileInput = document.getElementById('fileInput');
+    ws.page_setup.paperSize   = ws.PAPERSIZE_A4
+    ws.page_setup.orientation = ws.ORIENTATION_PORTRAIT
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth  = 1
+    ws.page_setup.fitToHeight = 1
+    margin_inch = MARGIN_CM / 2.54
+    ws.page_margins.top    = margin_inch
+    ws.page_margins.bottom = margin_inch
+    ws.page_margins.left   = margin_inch
+    ws.page_margins.right  = margin_inch
+    ws.page_margins.header = 0
+    ws.page_margins.footer = 0
+
+def process_file(data):
+    wb = openpyxl.load_workbook(io.BytesIO(bytes(data)))
+    for ws in wb.worksheets:
+        fit_sheet_to_a4(ws)
+    out = io.BytesIO()
+    wb.save(out)
+    return list(out.getvalue())
+`;
+
+// ── UI 要素 ──────────────────────────────────────────────────────────
+const loadBar   = document.getElementById('loadBar');
+const loadMsg   = document.getElementById('loadMsg');
 const dropZone  = document.getElementById('dropZone');
+const fileInput = document.getElementById('fileInput');
 const fileName  = document.getElementById('fileName');
 const submitBtn = document.getElementById('submitBtn');
 const errorMsg  = document.getElementById('errorMsg');
 
+let pyodide    = null;
 let selectedFile = null;
 
+function setLoading(pct, msg) {
+  loadBar.style.width = pct + '%';
+  loadMsg.textContent = msg;
+}
+
+// ── Pyodide 初期化 ───────────────────────────────────────────────────
+(async () => {
+  try {
+    setLoading(10, 'Python環境を準備中... (初回のみ30秒ほどかかります)');
+    pyodide = await loadPyodide();
+
+    setLoading(50, 'openpyxlをインストール中...');
+    await pyodide.loadPackage('micropip');
+    await pyodide.runPythonAsync(`
+import micropip
+await micropip.install('openpyxl')
+    `);
+
+    setLoading(90, 'コードを読み込み中...');
+    await pyodide.runPythonAsync(PYTHON_CODE);
+
+    setLoading(100, '準備完了');
+    setTimeout(() => { loadMsg.textContent = ''; loadBar.style.display = 'none'; }, 800);
+
+    dropZone.classList.remove('disabled');
+    fileInput.disabled = false;
+  } catch (e) {
+    setLoading(100, '');
+    errorMsg.textContent = '初期化に失敗しました: ' + e.message;
+  }
+})();
+
+// ── ファイル選択 ─────────────────────────────────────────────────────
 function handleFile(file) {
   if (!file) return;
   if (!/\.(xlsx|xlsm)$/i.test(file.name)) {
@@ -274,33 +336,34 @@ dropZone.addEventListener('drop', e => {
   handleFile(e.dataTransfer.files[0]);
 });
 
-submitBtn.addEventListener('click', () => {
-  if (!selectedFile) return;
-  submitBtn.disabled  = true;
+// ── 変換・ダウンロード ────────────────────────────────────────────────
+submitBtn.addEventListener('click', async () => {
+  if (!selectedFile || !pyodide) return;
+  submitBtn.disabled    = true;
   submitBtn.textContent = '変換中...';
   errorMsg.textContent  = '';
 
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const wb = XLSX.read(e.target.result, { type: 'array', cellStyles: true, sheetStubs: true });
-      wb.SheetNames.forEach(name => fitSheetToA4(wb.Sheets[name]));
+  try {
+    const buffer = await selectedFile.arrayBuffer();
+    const data   = Array.from(new Uint8Array(buffer));
 
-      const out  = XLSX.write(wb, { bookType: 'xlsx', type: 'array', cellStyles: true });
-      const blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
-      a.href     = url;
-      a.download = selectedFile.name.replace(/\.[^.]+$/, '') + '_手書き用.xlsx';
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      errorMsg.textContent = 'エラーが発生しました: ' + err.message;
-    }
-    submitBtn.disabled    = false;
-    submitBtn.textContent = 'A4サイズに変換してダウンロード';
-  };
-  reader.readAsArrayBuffer(selectedFile);
+    pyodide.globals.set('_input_data', pyodide.toPy(data));
+    const result = await pyodide.runPythonAsync('process_file(_input_data)');
+    const bytes  = new Uint8Array(result.toJs());
+
+    const blob = new Blob([bytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = selectedFile.name.replace(/\.[^.]+$/, '') + '_手書き用.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    errorMsg.textContent = 'エラーが発生しました: ' + e.message;
+  }
+
+  submitBtn.disabled    = false;
+  submitBtn.textContent = 'A4サイズに変換してダウンロード';
 });
 </script>
 </body>
