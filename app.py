@@ -74,27 +74,19 @@ def fit_sheet_to_a4(ws):
     for col_num, w in enumerate(boosted_widths, 1):
         ws.column_dimensions[get_column_letter(col_num)].width = w * scale_w
 
-    # 日付（データ）行を識別: 最も多い高さの行 = 日次記録行
-    from collections import Counter
-    modal_h = Counter(row_heights).most_common(1)[0][0]
-    is_data = [abs(h - modal_h) < 0.1 for h in row_heights]
-
-    data_sum  = sum(h for h, d in zip(row_heights, is_data) if d)
-    other_sum = sum(h for h, d in zip(row_heights, is_data) if not d)
-
-    # 日付行を1.5倍優先: Rd * data + Rd/1.5 * other = target
-    DATE_BOOST = 1.5
+    # 全行を均一スケール（ヘッダー・フッター行の文字が隠れないよう DATE_BOOST を廃止）
     target_h_pt = target_h_px / PX_PER_ROW_PT
-    Rd = target_h_pt / (data_sum + other_sum / DATE_BOOST)
-    Rn = Rd / DATE_BOOST
+    scale_h = target_h_pt / sum(row_heights)
+    for row_num, h in enumerate(row_heights, 1):
+        ws.row_dimensions[row_num].height = h * scale_h
 
-    for row_num, (h, d) in enumerate(zip(row_heights, is_data), 1):
-        ws.row_dimensions[row_num].height = h * (Rd if d else Rn)
-
-    # 合計回数・当月算定日数・移行準備支援体制加算の日数を消去
-    for coord in ['V43', 'Z43', 'AE43', 'AH43', 'AK43', 'AN43', 'AQ43', 'AT43', 'AW43',
-                  'BH43', 'BH44', 'AZ46']:
-        ws[coord].value = None
+    # 合計回数: 数式を消して「回」だけ残す
+    for coord in ['V43', 'Z43', 'AE43', 'AH43', 'AK43', 'AN43', 'AQ43', 'AT43', 'AW43']:
+        ws[coord].value = '回'
+    # 移行準備支援体制加算: 当月のみ消去（累計 BH44 は残す）
+    ws['BH43'].value = None
+    # 当月算定日数
+    ws['AZ46'].value = None
 
     # fitToPage で確実に 1 ページ・用紙いっぱいに収める
     ws.page_setup.paperSize   = ws.PAPERSIZE_A4
