@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Excel 手書き用変換</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, 'Hiragino Sans', sans-serif;
+      background: #f0f4f8;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+      padding: 40px;
+      width: 100%;
+      max-width: 480px;
+      text-align: center;
+    }
+
+    h1 { font-size: 20px; color: #1a202c; margin-bottom: 8px; }
+
+    .desc {
+      color: #718096;
+      font-size: 14px;
+      line-height: 1.7;
+      margin-bottom: 32px;
+    }
+
+    .badge {
+      display: inline-block;
+      background: #ebf8ff;
+      color: #2b6cb0;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 20px;
+      margin-bottom: 16px;
+    }
+
+    /* Drop zone */
+    .drop-zone {
+      border: 2px dashed #cbd5e0;
+      border-radius: 12px;
+      padding: 48px 24px;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: #f7fafc;
+      position: relative;
+    }
+
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: #4299e1;
+      background: #ebf8ff;
+    }
+
+    .drop-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .drop-zone .icon { font-size: 52px; margin-bottom: 14px; }
+    .drop-zone .label { color: #4a5568; font-size: 15px; font-weight: 500; }
+    .drop-zone .hint { color: #a0aec0; font-size: 13px; margin-top: 6px; }
+
+    .file-name {
+      margin-top: 12px;
+      font-size: 14px;
+      color: #2b6cb0;
+      font-weight: 500;
+      min-height: 22px;
+      word-break: break-all;
+    }
+
+    .btn {
+      display: block;
+      width: 100%;
+      margin-top: 24px;
+      padding: 15px;
+      background: #4299e1;
+      color: white;
+      font-size: 16px;
+      font-weight: 600;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .btn:hover { background: #3182ce; }
+    .btn:disabled { background: #a0aec0; cursor: not-allowed; }
+
+    .info-box {
+      margin-top: 24px;
+      background: #f7fafc;
+      border-radius: 10px;
+      padding: 14px 16px;
+      text-align: left;
+      font-size: 13px;
+      color: #4a5568;
+      line-height: 1.8;
+    }
+
+    .info-box strong { color: #2d3748; }
+
+    .error {
+      margin-top: 12px;
+      color: #e53e3e;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+<div class="card">
+  <div class="badge">自動 A4 フィット</div>
+  <h1>Excel 手書き用変換</h1>
+  <p class="desc">
+    アップロードするだけで、セルのサイズを<br>
+    <strong>A4用紙いっぱい</strong>になるよう自動で調整します。<br>
+    レイアウトや構成はそのまま維持されます。
+  </p>
+
+  <form id="form" action="/convert" method="post" enctype="multipart/form-data">
+    <div class="drop-zone" id="dropZone">
+      <input type="file" name="file" id="fileInput" accept=".xlsx,.xlsm">
+      <div class="icon">📊</div>
+      <div class="label">クリックまたはドラッグ＆ドロップ</div>
+      <div class="hint">.xlsx ファイルに対応</div>
+    </div>
+    <div class="file-name" id="fileName"></div>
+
+    <button class="btn" type="submit" id="submitBtn" disabled>A4サイズに変換してダウンロード</button>
+    <div class="error" id="errorMsg"></div>
+  </form>
+
+  <div class="info-box">
+    <strong>自動で行うこと</strong><br>
+    ・縦横の比率を維持したままセルを拡大<br>
+    ・縦長なら縦向き、横長なら横向きを自動選択<br>
+    ・用紙サイズを A4 に設定<br>
+    ・ファイル名に「_手書き用」を追加して保存
+  </div>
+</div>
+
+<script>
+  const fileInput = document.getElementById('fileInput');
+  const dropZone  = document.getElementById('dropZone');
+  const fileName  = document.getElementById('fileName');
+  const submitBtn = document.getElementById('submitBtn');
+  const errorMsg  = document.getElementById('errorMsg');
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) {
+      fileName.textContent = fileInput.files[0].name;
+      submitBtn.disabled = false;
+      errorMsg.textContent = '';
+    }
+  });
+
+  dropZone.addEventListener('dragover',  (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+  dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('dragover'));
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    const files = e.dataTransfer.files;
+    if (files[0]) {
+      fileInput.files = files;
+      fileName.textContent = files[0].name;
+      submitBtn.disabled = false;
+      errorMsg.textContent = '';
+    }
+  });
+
+  document.getElementById('form').addEventListener('submit', () => {
+    submitBtn.disabled = true;
+    submitBtn.textContent = '変換中...';
+    setTimeout(() => {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'A4サイズに変換してダウンロード';
+    }, 8000);
+  });
+</script>
+</body>
+</html>
