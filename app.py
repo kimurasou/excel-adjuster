@@ -80,6 +80,11 @@ def fit_sheet_to_a4(ws):
     for row_num, h in enumerate(row_heights, 1):
         ws.row_dimensions[row_num].height = h * scale_h
 
+    # データ行（12〜42）の入力済みフィールドを消去
+    for row in range(12, 43):
+        for col in ['N', 'R', 'AE', 'AZ', 'BH']:  # 開始時間, 終了時間, 食事提供加算, 移行準備支援体制加算, 備考
+            ws[f'{col}{row}'].value = None
+
     # 合計回数: 数式を消して「回」だけ残す
     for coord in ['V43', 'Z43', 'AE43', 'AH43', 'AK43', 'AN43', 'AQ43', 'AT43', 'AW43']:
         ws[coord].value = '回'
