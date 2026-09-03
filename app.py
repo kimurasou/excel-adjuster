@@ -58,9 +58,10 @@ def fit_sheet_to_a4(ws):
 
     # セルを A4 より少し大きく設定 → fitToPage が縮小して用紙いっぱいに収まる
     # ちょうど A4 サイズにすると丸め誤差で 2 ページ or 余白残りが起きる
-    OVERSHOOT = 1.10
-    target_w_px = A4_PORTRAIT_W / 2.54 * DPI * OVERSHOOT
-    target_h_px = A4_PORTRAIT_H / 2.54 * DPI * OVERSHOOT
+    OVERSHOOT_W = 1.10
+    OVERSHOOT_H = 4.00
+    target_w_px = A4_PORTRAIT_W / 2.54 * DPI * OVERSHOOT_W
+    target_h_px = A4_PORTRAIT_H / 2.54 * DPI * OVERSHOOT_H
 
     # 開始時間(N-Q=14-17)・終了時間(R-U=18-21) を他の列より広くする
     TIME_COL_BOOST = 1.5
