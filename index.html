@@ -148,6 +148,92 @@
       color: #e53e3e;
       font-size: 14px;
     }
+
+    /* ステップガイド */
+    .steps {
+      margin-bottom: 28px;
+      text-align: left;
+    }
+
+    .steps-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #718096;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 12px;
+    }
+
+    .step-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .step-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      position: relative;
+    }
+
+    .step-left {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .step-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #4299e1;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .step-item.highlight .step-num {
+      background: #48bb78;
+      box-shadow: 0 0 0 3px #c6f6d5;
+    }
+
+    .step-line {
+      width: 2px;
+      flex: 1;
+      min-height: 16px;
+      background: #e2e8f0;
+      margin: 3px 0;
+    }
+
+    .step-body {
+      padding-bottom: 16px;
+      flex: 1;
+    }
+
+    .step-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #2d3748;
+      line-height: 1.4;
+      padding-top: 4px;
+    }
+
+    .step-item.highlight .step-label {
+      color: #276749;
+    }
+
+    .step-sub {
+      font-size: 11px;
+      color: #718096;
+      margin-top: 2px;
+      line-height: 1.5;
+    }
   </style>
 </head>
 <body>
@@ -159,6 +245,74 @@
     <strong>A4用紙いっぱい</strong>になるよう自動で調整します。<br>
     レイアウトや構成はそのまま維持されます。
   </p>
+
+  <div class="steps">
+    <div class="steps-title">使い方・手順</div>
+    <div class="step-list">
+
+      <div class="step-item">
+        <div class="step-left">
+          <div class="step-num">1</div>
+          <div class="step-line"></div>
+        </div>
+        <div class="step-body">
+          <div class="step-label">ポチパスにログイン</div>
+        </div>
+      </div>
+
+      <div class="step-item">
+        <div class="step-left">
+          <div class="step-num">2</div>
+          <div class="step-line"></div>
+        </div>
+        <div class="step-body">
+          <div class="step-label">「書類ダウンロード」を開く</div>
+        </div>
+      </div>
+
+      <div class="step-item">
+        <div class="step-left">
+          <div class="step-num">3</div>
+          <div class="step-line"></div>
+        </div>
+        <div class="step-body">
+          <div class="step-label">「実績記録表」を選択</div>
+        </div>
+      </div>
+
+      <div class="step-item">
+        <div class="step-left">
+          <div class="step-num">4</div>
+          <div class="step-line"></div>
+        </div>
+        <div class="step-body">
+          <div class="step-label">「利用者まとめてエクセル出力はこちら」をクリック</div>
+        </div>
+      </div>
+
+      <div class="step-item">
+        <div class="step-left">
+          <div class="step-num">5</div>
+          <div class="step-line"></div>
+        </div>
+        <div class="step-body">
+          <div class="step-label">対象月を選んでダウンロード</div>
+          <div class="step-sub">「実績記録表」の対象月を選択し、ダウンロード</div>
+        </div>
+      </div>
+
+      <div class="step-item highlight">
+        <div class="step-left">
+          <div class="step-num">6</div>
+        </div>
+        <div class="step-body">
+          <div class="step-label">ダウンロードしたファイルをここに添付</div>
+          <div class="step-sub">下のエリアにドラッグ＆ドロップ、またはクリックして選択</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
 
   <div class="loading-bar"><div class="loading-bar-inner" id="loadBar"></div></div>
   <div class="loading-msg" id="loadMsg">Python環境を準備中... (初回のみ30秒ほどかかります)</div>
